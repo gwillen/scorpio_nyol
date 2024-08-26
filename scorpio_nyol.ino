@@ -163,13 +163,7 @@ void loop() {
 
   if (!serialOkay) {
     // go into demo mode if we lose the serial port. :-(
-    uint32_t now = millis(); // Get time once at start of each frame
-    for(uint8_t r=0; r<8; r++) { // For each row...
-      for(int p=0; p<NUM_LEDS; p++) { // For each pixel of row...
-        leds.setPixelColor(r * NUM_LEDS + p, rain(now, r, p));
-      }
-    }
-    leds.show();
+    raindemo();
   }
 }
 
@@ -310,6 +304,16 @@ void seqtest() {
     leds.show();
     delay(100);
   }
+}
+
+void raindemo() {
+  uint32_t now = millis(); // Get time once at start of each frame
+  for(uint8_t r=0; r<8; r++) { // For each row...
+    for(int p=0; p<NUM_LEDS; p++) { // For each pixel of row...
+      leds.setPixelColor(r * NUM_LEDS + p, rain(now, r, p));
+    }
+  }
+  leds.show();
 }
 
 void flashfor(int duration) {
