@@ -22,6 +22,17 @@ uint8_t *pixels;
 unsigned long lastDataReceived = 0;
 const unsigned long TIMEOUT = 1000; // 1 second timeout
 
+enum modes {
+  INIT = 0,
+  MANUAL = 1,
+  FIRST_DEMO = 2,
+  RAIN_DEMO = 2,
+  N_MODES,
+};
+
+modes mode = INIT;
+modes DEFAULT_DEMO_MODE = RAIN_DEMO;
+
 void setup() {
   // The baud rate is seemingly ignored by the Feather / RP2040 simulated UART, which seems to always run at line speed.
   // I observe just under 1 Mbps, but that's ignoring all overheads.
@@ -34,9 +45,7 @@ S  }
   Serial.println("LED controller starting up...");
 
   pinMode(LED_BUILTIN, OUTPUT);
-  for (int i = 0; i < 5; ++i) {
-    flashfor(50, 10);
-  }
+  flashfor(30, 30, 3);
 
   // Start NeoPXL8. If begin() returns false, either an invalid pin list
   // was provided, or requested too many pixels for available RAM.
@@ -52,7 +61,7 @@ S  }
   // XXX: fix this
   // leds.setBrightness(10); // Tone it down, NeoPixels are BRIGHT!
   // leds.setBrightness(255); // I believe this is the default?
-  pixels = leds.getPixels();
+  // pixels = leds.getPixels();
   // XXX: DON'T DO THIS
   //leds.setLatchTime(200);
 
@@ -62,11 +71,14 @@ S  }
   // RGB order. Try different COLOR_ORDER values until code and hardware
   // are in harmony.
   rgbtest();
+  black();
+  delay(200);
 
   Serial.println("Testing strips (should flash each strip in sequence.)");
   seqtest();
 
   Serial.println("Startup complete.");
+  mode = DEFAULT_DEMO_MODE;
   Serial.println("OK");
 }
 
@@ -84,37 +96,40 @@ unsigned long cmd_end = 0;
 int serialOkay = 1;
 
 void loop() {
+  if (mode == RAIN_DEMO) {
+    raindemo();
+  }
+
   if (millis() - lastDataReceived > TIMEOUT) {
     serialOkay = 0;
     /*
     // Connection might be stuck, try to reset it
-    for (int i = 0; i < 3; ++i) {
-      flashfor(100, 100);
-    }
+    flashfor(100, 100, 3);
     Serial.end();
     delay(100);
     Serial.begin(2000000);
     Serial.println("nobody is listening, does this kill the line");
     while (!Serial) {
     }
-    for (int i = 0; i < 3; ++i) {
-      flashfor(100, 100);
-    }
+    flashfor(100, 100, 3);
     lastDataReceived = millis();
     */
   } else {
     serialOkay = 1;
   }
+
   if (Serial) {
     digitalWrite(LED_BUILTIN, HIGH);
   } else {
     digitalWrite(LED_BUILTIN, LOW);
   }
+
   //Serial.print("%");
   Serial.flush(); // no idea if this should make any difference to anything; wait for outgoing serial before continuing. Trying to prevent mysterious serial lockups.
-  while (serialOkay && !Serial.available()) {
+  while (mode == MANUAL && serialOkay && !Serial.available()) {
     if (millis() - lastDataReceived > TIMEOUT) {
       serialOkay = 0;
+      mode = DEFAULT_DEMO_MODE;
     }
     // just ... don't do anything and wait patiently. We have nothing else to do here.
   }
@@ -162,8 +177,7 @@ void loop() {
   }
 
   if (!serialOkay) {
-    // go into demo mode if we lose the serial port. :-(
-    raindemo();
+    // we lost the serial port. :-(
   }
 }
 
@@ -178,7 +192,27 @@ void docmd() {
   cmd_start = 0;
   int cmdlen = bufptr-buf;
   bufptr = buf;
-  if (buf[0] == '*') {  // set all lights
+  if (buf[0] == 'D') {  // go back to demo mode
+    if (buf[1] == '\n') {
+      mode = DEFAULT_DEMO_MODE;
+    } else {
+      int newmode = read_hex_byte(buf+1);
+      if (newmode >= FIRST_DEMO && newmode < N_MODES) {
+        Serial.print("Switching to demo mode number:");
+        Serial.println(newmode);
+        mode = (modes)newmode;
+      } else {
+        Serial.print("Bad demo mode number:");
+        Serial.print(newmode);
+        Serial.print("; valid modes are from ");
+        Serial.print(FIRST_DEMO);
+        Serial.print(" to ");
+        Serial.print(N_MODES-1);
+        Serial.println(".");
+      }
+    }
+  } else if (buf[0] == '*') {  // set all lights
+    mode = MANUAL;
     cmdlen -= 1;
     Serial.print("Got * command, setting lights...");
     for (int i = 0; i < cmdlen / 6; ++i) {
@@ -195,6 +229,7 @@ void docmd() {
     Serial.print("updating leds after getting cmd took (microseconds): ");
     Serial.println(micros() - cmd_end);
   } else if (buf[0] == '@') {  // set all lights, binary
+    mode = MANUAL;
     // XXX: this is badly defined, since a '\n' could appear in the binary data and terminate the line. We'll resync but it's stupid.
     cmdlen -= 1;
     Serial.print("Got @ command, setting lights (binary)...");
@@ -212,6 +247,7 @@ void docmd() {
     Serial.print("updating leds after getting cmd took (microseconds): ");
     Serial.println(micros() - cmd_end);
   } else if (buf[0] == '%') {  // set all lights, compact binary
+    mode = MANUAL;
     // XXX: this is badly defined, since a '\n' could appear in the binary data and terminate the line. We'll resync but it's stupid.
     Serial.print("Got % command, setting lights (compact binary)...");
     cmdlen -= 1;
@@ -234,8 +270,16 @@ void docmd() {
     Serial.print("updating leds after getting cmd took (microseconds): ");
     Serial.println(micros() - cmd_end);
   } else if (buf[0] == '#') {
+    // doesn't change mode
     Serial.println("ignoring comment.");
+  } else if (buf[0] == 'b') {
+    // doesn't change mode
+    int brightness = read_hex_byte(buf+1);
+    Serial.print("Setting LED brightness to:");
+    Serial.println(brightness);
+    leds.setBrightness(brightness);
   } else {
+    // doesn't change mode
     Serial.println("I didn't understand that line.");
   }
 
@@ -282,13 +326,16 @@ uint32_t rain(uint32_t now, uint8_t row, int pixelNum) {
                     leds.gamma8((demo_colors[row][2] * b) >> 8));
 }
 
+void black() {
+  leds.fill(0);
+  leds.show();
+}
+
 void rgbtest() {
   for (uint32_t color = 0xFF0000; color > 0; color >>= 8) {
-    flashfor(100);
     leds.fill(color);
     leds.show();
-    flashfor(100);
-    delay(200);
+    flashfor(100, 100);  // delay 200
   }
 }
 
@@ -302,7 +349,7 @@ void seqtest() {
     uint32_t color = leds.Color(demo_colors[i][0], demo_colors[i][1], demo_colors[i][2]);
     leds.fill(color, i * NUM_LEDS, NUM_LEDS);
     leds.show();
-    delay(100);
+    flashfor(100, 100);  // delay 200
   }
 }
 
@@ -319,10 +366,16 @@ void raindemo() {
 void flashfor(int duration) {
   flashfor(duration, 0);
 }
-// Flash the builtin LED
+
 void flashfor(int duration, int pause) {
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(duration);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(pause);
+  flashfor(duration, pause, 1);
+}
+
+void flashfor(int duration, int pause, int count) {
+  for (size_t i = 0; i < count; ++i) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(duration);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(pause);
+  }
 }
