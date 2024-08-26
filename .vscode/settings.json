@@ -1,0 +1,17 @@
+{
+  "C_Cpp.default.includePath": [
+    "/home/gwillen/Arduino/libraries/*/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/cores/rp2040/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/lib/lwip/src/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/lib/lwip/contrib/ports/unix/port/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/variants/adafruit_feather_scorpio/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/rp2_common/hardware_gpio/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/common/*/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/include/pico_base/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/rp2_common/*/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/rp2040/*/include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RaspberryPi/RP2040/Include/",
+    "/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include/"
+  ]
+}
