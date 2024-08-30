@@ -1,9 +1,22 @@
 #include <Adafruit_NeoPXL8.h>
 
 #define NUM_LEDS    180      // NeoPixels PER STRAND, total number is 8X this!
-#define NUM_LEDS_ALL ((NUM_LEDS) * 8)
+#define NUM_LEDS_ALL ((NUM_LEDS) * 12)
 #define COLOR_ORDER NEO_GRB // NeoPixel color format (see Adafruit_NeoPixel)
 #define MS_PER_FRAME 20
+
+#define I_AM_DEVICE 0
+
+struct panelId {
+  int device;
+  int port;
+};
+
+// maps from "where is panel visually" to "where is panel in internal (wiring harness) order"
+panelId spherePanelMap[12] = {
+  {0, 0}, {0, 1}, {0, 2}, {0, 3}, // XXX not mapped yet
+  {1, 2}, {1, 4}, {1, 5}, {1, 3}, {1, 1}, {1, 0}, {1, 6}, {1, 7} };
+
 
 // For the Feather RP2040 SCORPIO, use this list:
 int8_t pins[8] = { 16, 17, 18, 19, 20, 21, 22, 23 };
@@ -416,7 +429,23 @@ void rainbowWave() {
   leds.show();
 }
 
-int spherePanelOrder[] = { 2, 4, 5, 3, 1, 0, 6, 7 };
+bool isMyPixel(int i) {
+  int panel = i / NUM_LEDS;
+  panelId pid = spherePanelMap[panel];
+  return pid.device == I_AM_DEVICE;
+}
+
+int myPixelIdx(int i) {
+  int panel = i / NUM_LEDS;
+  panelId pid = spherePanelMap[panel];
+  return NUM_LEDS * pid.port + i % NUM_LEDS;
+}
+
+void setVirtualPixel(int i, int r, int g, int b) {
+  if (isMyPixel(i)) {
+    leds.setPixelColor(myPixelIdx(i), r, g, b);
+  }
+}
 
 void slowRainbow() {
   uint32_t now = millis();
@@ -434,8 +463,7 @@ void slowRainbow() {
     else if (hue < 5.0f/6.0f) { r = 255 * x; g = 0; b = 255; }
     else                      { r = 255; g = 0; b = 255 * x; }
 
-    int string = i / NUM_LEDS;
-    leds.setPixelColor(NUM_LEDS * spherePanelOrder[string] + (i % NUM_LEDS), r, g, b);
+    setVirtualPixel(i, r, g, b);
   }
   leds.show();
 }
@@ -457,7 +485,7 @@ void sparkleFade() {
         if (sparkle_brightness[i] > 0) {
             sparkle_brightness[i] -= 10;
             if (sparkle_brightness[i] < 0) sparkle_brightness[i] = 0;
-            leds.setPixelColor(sparkle_positions[i], sparkle_brightness[i], sparkle_brightness[i], sparkle_brightness[i]);
+            setVirtualPixel(sparkle_positions[i], sparkle_brightness[i], sparkle_brightness[i], sparkle_brightness[i]);
         }
     }
 
