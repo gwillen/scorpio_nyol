@@ -1,6 +1,6 @@
 UF2="build/scorpio_nyol.ino.uf2"
 PUSHDIR="/media/gwillen/RPI-RP2/"
-UF2CONV="/home/gwillen/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/tools/uf2conv.py"
+UF2CONV="${HOME}/.arduino15/packages/rp2040/hardware/rp2040/3.9.5/tools/uf2conv.py"
 SERIAL=$(echo /dev/ttyACM*)
 
 if [[ -d "${PUSHDIR}" ]]; then
