@@ -1,7 +1,9 @@
 #include <Adafruit_NeoPXL8.h>
 
 #define NUM_LEDS    180      // NeoPixels PER STRAND, total number is 8X this!
+#define NUM_LEDS_ALL ((NUM_LEDS) * 8)
 #define COLOR_ORDER NEO_GRB // NeoPixel color format (see Adafruit_NeoPixel)
+#define MS_PER_FRAME 20
 
 // For the Feather RP2040 SCORPIO, use this list:
 int8_t pins[8] = { 16, 17, 18, 19, 20, 21, 22, 23 };
@@ -27,11 +29,15 @@ enum modes {
   MANUAL = 1,
   FIRST_DEMO = 2,
   RAIN_DEMO = 2,
+  RAINBOW_WAVE_DEMO = 3,
+  SPARKLE_FADE_DEMO = 4,
+  SLOW_RAINBOW_DEMO = 5,
   N_MODES,
 };
 
 modes mode = INIT;
-modes DEFAULT_DEMO_MODE = RAIN_DEMO;
+modes DEFAULT_DEMO_MODE = SLOW_RAINBOW_DEMO;
+int framerate = MS_PER_FRAME;
 
 void setup() {
   // The baud rate is seemingly ignored by the Feather / RP2040 simulated UART, which seems to always run at line speed.
@@ -98,6 +104,12 @@ int serialOkay = 1;
 void loop() {
   if (mode == RAIN_DEMO) {
     raindemo();
+  } else if (mode == RAINBOW_WAVE_DEMO) {
+    rainbowWave();
+  } else if (mode == SPARKLE_FADE_DEMO) {
+    sparkleFade();
+  } else if (mode == SLOW_RAINBOW_DEMO) {
+    slowRainbow();
   }
 
   if (millis() - lastDataReceived > TIMEOUT) {
@@ -192,7 +204,22 @@ void docmd() {
   cmd_start = 0;
   int cmdlen = bufptr-buf;
   bufptr = buf;
-  if (buf[0] == 'D') {  // go back to demo mode
+  if (buf[0] == 'h' || buf[0] == '?') {
+    Serial.println("COMMANDS (all commands are a line followed by \\n):");
+    Serial.println(" h / ? - help");
+    Serial.println(" d[hh] - set demo mode (two hex digits for demo number, or omit for default)");
+    Serial.println(" *[hh[hh[hh...]]] -- directly set LED colors (two hex digits per channel R/G/B, three channels per LED) -- after 1s without direct LED set commands, will default back to demo mode.");
+    Serial.println(" @[c[c[c...]]] -- directly set LED colors (binary, one byte per channel R/G/B, three channels per LED, do not use the character \\n because I suck, timeout as above.)");
+    Serial.println(" %[c[c[c...]]] -- directly set LED colors (binary, one byte per pixel 2 bits R / 3 bits G / 3 bits B, do not use the character \\n because I suck, timeout as above.)");
+    Serial.println(" b[hh] - set brightness (two hex digits for level)");
+    Serial.println(" #... -- line is ignored.");
+  } else if (buf[0] == 'f') {  // framerate in ms
+    if (buf[1] == '\n') {
+      framerate = MS_PER_FRAME;
+    } else {
+      framerate = read_hex_byte(buf+1);
+    }
+  } else if (buf[0] == 'd') {  // go back to demo mode
     if (buf[1] == '\n') {
       mode = DEFAULT_DEMO_MODE;
     } else {
@@ -349,18 +376,102 @@ void seqtest() {
     uint32_t color = leds.Color(demo_colors[i][0], demo_colors[i][1], demo_colors[i][2]);
     leds.fill(color, i * NUM_LEDS, NUM_LEDS);
     leds.show();
-    flashfor(100, 100);  // delay 200
+    flashfor(500, 100);  // delay 200
   }
 }
 
 void raindemo() {
   uint32_t now = millis(); // Get time once at start of each frame
+  int frame = now * 20 / framerate;
+
   for(uint8_t r=0; r<8; r++) { // For each row...
     for(int p=0; p<NUM_LEDS; p++) { // For each pixel of row...
       leds.setPixelColor(r * NUM_LEDS + p, rain(now, r, p));
     }
   }
   leds.show();
+}
+
+// thanks Claude for this one
+void rainbowWave() {
+  uint32_t now = millis(); // Get time once at start of each frame
+  int frame = now / framerate;
+
+  for (int string = 0; string < 8; ++string) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      float hue = fmodf((float)(i + frame) / 30.0f, 1.0f);
+      float x = 1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f);
+      unsigned char r, g, b;
+
+      if (hue < 1.0f/6.0f)      { r = 255; g = 255 * x; b = 0; }
+      else if (hue < 2.0f/6.0f) { r = 255 * x; g = 255; b = 0; }
+      else if (hue < 3.0f/6.0f) { r = 0; g = 255; b = 255 * x; }
+      else if (hue < 4.0f/6.0f) { r = 0; g = 255 * x; b = 255; }
+      else if (hue < 5.0f/6.0f) { r = 255 * x; g = 0; b = 255; }
+      else                      { r = 255; g = 0; b = 255 * x; }
+
+      leds.setPixelColor(string * NUM_LEDS + i, r, g, b);
+    }
+  }
+  leds.show();
+}
+
+int spherePanelOrder[] = { 2, 4, 5, 3, 1, 0, 6, 7 };
+
+void slowRainbow() {
+  uint32_t now = millis();
+  int frame = now / framerate;
+
+  for (int i = 0; i < NUM_LEDS_ALL; i++) {
+    float hue = fmodf((float)(i + frame) / (180.0f * 8.0f), 1.0f);
+    float x = 1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f);
+    unsigned char r, g, b;
+
+    if (hue < 1.0f/6.0f)      { r = 255; g = 255 * x; b = 0; }
+    else if (hue < 2.0f/6.0f) { r = 255 * x; g = 255; b = 0; }
+    else if (hue < 3.0f/6.0f) { r = 0; g = 255; b = 255 * x; }
+    else if (hue < 4.0f/6.0f) { r = 0; g = 255 * x; b = 255; }
+    else if (hue < 5.0f/6.0f) { r = 255 * x; g = 0; b = 255; }
+    else                      { r = 255; g = 0; b = 255 * x; }
+
+    int string = i / NUM_LEDS;
+    leds.setPixelColor(NUM_LEDS * spherePanelOrder[string] + (i % NUM_LEDS), r, g, b);
+  }
+  leds.show();
+}
+
+// Demo 2: Sparkle Fade
+#define MAX_SPARKLES 5000
+int sparkle_positions[MAX_SPARKLES];
+int sparkle_brightness[MAX_SPARKLES];
+
+void sparkleFade() {
+    uint32_t now = millis(); // Get time once at start of each frame
+    int frame = now / framerate;
+
+    // Clear the strip
+    leds.fill(0);
+
+    // Update existing sparkles
+    for (int i = 0; i < MAX_SPARKLES; i++) {
+        if (sparkle_brightness[i] > 0) {
+            sparkle_brightness[i] -= 10;
+            if (sparkle_brightness[i] < 0) sparkle_brightness[i] = 0;
+            leds.setPixelColor(sparkle_positions[i], sparkle_brightness[i], sparkle_brightness[i], sparkle_brightness[i]);
+        }
+    }
+
+    // Add new sparkles
+    if (frame % 5 == 0) {
+        for (int i = 0; i < MAX_SPARKLES; i++) {
+            if (sparkle_brightness[i] == 0) {
+                sparkle_positions[i] = rand() % NUM_LEDS_ALL;
+                sparkle_brightness[i] = 255;
+                break;
+            }
+        }
+    }
+    leds.show();
 }
 
 void flashfor(int duration) {
