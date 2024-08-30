@@ -4,6 +4,7 @@
 #define NUM_LEDS_ALL ((NUM_LEDS) * 12)
 #define COLOR_ORDER NEO_GRB // NeoPixel color format (see Adafruit_NeoPixel)
 #define MS_PER_FRAME 20
+#define DIAGNOSTICS false
 
 #define I_AM_DEVICE 0
 
@@ -45,11 +46,12 @@ enum modes {
   RAINBOW_WAVE_DEMO = 3,
   SPARKLE_FADE_DEMO = 4,
   SLOW_RAINBOW_DEMO = 5,
+  THE_MAN = 6,
   N_MODES,
 };
 
 modes mode = INIT;
-modes DEFAULT_DEMO_MODE = SLOW_RAINBOW_DEMO;
+modes DEFAULT_DEMO_MODE = THE_MAN;
 int framerate = MS_PER_FRAME;
 
 void setup() {
@@ -64,7 +66,9 @@ S  }
   Serial.println("LED controller starting up...");
 
   pinMode(LED_BUILTIN, OUTPUT);
-  flashfor(30, 30, 3);
+  if (DIAGNOSTICS) {
+    flashfor(30, 30, 3);
+  }
 
   // Start NeoPXL8. If begin() returns false, either an invalid pin list
   // was provided, or requested too many pixels for available RAM.
@@ -75,30 +79,35 @@ S  }
     pinMode(LED_BUILTIN, OUTPUT);
     for (;;) digitalWrite(LED_BUILTIN, (millis() / 500) & 1);
   }
-  Serial.println("Initialized LEDs. Testing color pattern (should flash in order RED/GREEN/BLUE).");
 
-  // XXX: fix this
-  // leds.setBrightness(10); // Tone it down, NeoPixels are BRIGHT!
-  // leds.setBrightness(255); // I believe this is the default?
-  // pixels = leds.getPixels();
-  // XXX: DON'T DO THIS
-  //leds.setLatchTime(200);
+  if (DIAGNOSTICS) {
+    Serial.println("Initialized LEDs. Testing color pattern (should flash in order RED/GREEN/BLUE).");
 
-  // Cycle all pixels red/green/blue on startup. If you see a different
-  // sequence, COLOR_ORDER doesn't match your particular NeoPixel type.
-  // If you get a jumble of colors, you're using RGBW NeoPixels with an
-  // RGB order. Try different COLOR_ORDER values until code and hardware
-  // are in harmony.
-  rgbtest();
-  black();
-  delay(200);
+    // XXX: fix this
+    // leds.setBrightness(10); // Tone it down, NeoPixels are BRIGHT!
+    // leds.setBrightness(255); // I believe this is the default?
+    // pixels = leds.getPixels();
+    // XXX: DON'T DO THIS
+    //leds.setLatchTime(200);
 
-  Serial.println("Testing strips (should flash each strip in sequence.)");
-  seqtest();
+    // Cycle all pixels red/green/blue on startup. If you see a different
+    // sequence, COLOR_ORDER doesn't match your particular NeoPixel type.
+    // If you get a jumble of colors, you're using RGBW NeoPixels with an
+    // RGB order. Try different COLOR_ORDER values until code and hardware
+    // are in harmony.
+    rgbtest();
+    black();
+    delay(200);
+
+    Serial.println("Testing strips (should flash each strip in sequence.)");
+    seqtest();
+  }
 
   Serial.println("Startup complete.");
   mode = DEFAULT_DEMO_MODE;
   Serial.println("OK");
+
+  theManSetup();
 }
 
 // XXX: no point making this so large, we will never get an available read larger than some internal buffer (and it might arbitrarily be smaller due to timing.)
@@ -123,6 +132,8 @@ void loop() {
     sparkleFade();
   } else if (mode == SLOW_RAINBOW_DEMO) {
     slowRainbow();
+  } else if (mode == THE_MAN) {
+    theMan();
   }
 
   if (millis() - lastDataReceived > TIMEOUT) {
@@ -447,21 +458,26 @@ void setVirtualPixel(int i, int r, int g, int b) {
   }
 }
 
+// Hue is in the range 0-6.
+void hueToRgb(float hue, uint8_t *r, uint8_t *g, uint8_t *b) {
+    float x = 1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f);
+
+    if (hue < 1.0f/6.0f)      { *r = 255; *g = 255 * x; *b = 0; }
+    else if (hue < 2.0f/6.0f) { *r = 255 * x; *g = 255; *b = 0; }
+    else if (hue < 3.0f/6.0f) { *r = 0; *g = 255; *b = 255 * x; }
+    else if (hue < 4.0f/6.0f) { *r = 0; *g = 255 * x; *b = 255; }
+    else if (hue < 5.0f/6.0f) { *r = 255 * x; *g = 0; *b = 255; }
+    else                      { *r = 255; *g = 0; *b = 255 * x; }
+}
+
 void slowRainbow() {
   uint32_t now = millis();
   int frame = now / framerate;
 
   for (int i = 0; i < NUM_LEDS_ALL; i++) {
     float hue = fmodf((float)(i + frame) / (180.0f * 8.0f), 1.0f);
-    float x = 1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f);
     unsigned char r, g, b;
-
-    if (hue < 1.0f/6.0f)      { r = 255; g = 255 * x; b = 0; }
-    else if (hue < 2.0f/6.0f) { r = 255 * x; g = 255; b = 0; }
-    else if (hue < 3.0f/6.0f) { r = 0; g = 255; b = 255 * x; }
-    else if (hue < 4.0f/6.0f) { r = 0; g = 255 * x; b = 255; }
-    else if (hue < 5.0f/6.0f) { r = 255 * x; g = 0; b = 255; }
-    else                      { r = 255; g = 0; b = 255 * x; }
+    hueToRgb(hue, &r, &g, &b);
 
     setVirtualPixel(i, r, g, b);
   }
@@ -500,6 +516,98 @@ void sparkleFade() {
         }
     }
     leds.show();
+}
+
+struct Dash {
+  long startMillis;
+  int radius; // Width = 2*radius + 1.
+  float speed; // LEDs per second.
+};
+
+#define MAX_DASHES 20
+#define MIN_RADIUS 2
+#define MAX_RADIUS 5
+int dashCount = 0;
+Dash dashes[MAX_DASHES];
+float dashLeds[NUM_LEDS_ALL];
+float dashShape[MAX_RADIUS + 1][MAX_RADIUS + 1]; // [width][position]
+
+float getDashShape(int radius, int pos) {
+  if (pos < 0) {
+    pos = -pos;
+  }
+  return pos <= radius ? dashShape[radius][pos] : 0;
+}
+
+float getInterpolatedDashShape(int radius, float pos) {
+  int intPos = floor(pos);
+  float frac = pos - intPos;
+  float a = getDashShape(radius, intPos);
+  float b = getDashShape(radius, intPos + 1);
+  return a*(1 - frac) + b*frac;
+}
+
+void theManSetup() {
+  // Pre-compute shapes of each dash width.
+  for (int width = MIN_RADIUS; width <= MAX_RADIUS; width++) {
+    for (int i = 0; i <= width; i++) {
+      dashShape[width][i] = exp(-float(i)/width*3);
+    }
+  }
+}
+
+void theMan() {
+  long now = millis();
+  int frame = now / framerate;
+
+  // Look for dead dashes.
+  for (int i = dashCount - 1; i >= 0; i--) {
+    Dash *d = &dashes[i];
+    int pos = (now - d->startMillis)*d->speed/1000;
+    if (pos - d->radius > NUM_LEDS_ALL) {
+      // Kill dash.
+      dashes[i] = dashes[dashCount - 1];
+      dashCount -= 1;
+    }
+  }
+
+  // Create new dashes.
+  if (dashCount < MAX_DASHES && (dashCount == 0 || rand() % 1000 <= 1)) {
+    Dash *d = &dashes[dashCount++];
+    int width = rand() % (MAX_RADIUS - MIN_RADIUS + 1) + MIN_RADIUS;
+    d->startMillis = now;
+    d->radius = width;
+    d->speed = (rand() % 3 + 1)*10;
+  }
+
+  // Lay out dashes.
+  memset(dashLeds, 0, sizeof(float)*NUM_LEDS_ALL);
+  for (int i = 0; i < dashCount; i++) {
+    Dash *d = &dashes[i];
+    float pos = (now - d->startMillis)*d->speed/1000;
+    float frac = pos - floor(pos);
+    for (int j = -d->radius; j <= d->radius + 1; j++) {
+      int k = pos + j;
+      if (k >= 0 && k < NUM_LEDS_ALL) {
+        float value = getInterpolatedDashShape(d->radius, j - frac);
+        if (value > dashLeds[k]) {
+          dashLeds[k] = value;
+        }
+      }
+    }
+  }
+
+  // Draw dashes.
+  leds.fill(0);
+  for (int i = 0; i < NUM_LEDS_ALL; i++) {
+    float hue = fmodf((float)(i + frame) / (180.0f * 8.0f), 1.0f);
+    unsigned char r, g, b;
+    hueToRgb(hue, &r, &g, &b);
+    float value = dashLeds[i];
+
+    setVirtualPixel(i, value*r, value*g, value*b);
+  }
+  leds.show();
 }
 
 void flashfor(int duration) {
