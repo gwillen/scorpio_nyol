@@ -1,12 +1,13 @@
 #include <Adafruit_NeoPXL8.h>
 
 #define NUM_LEDS    180      // NeoPixels PER STRAND, total number is 8X this!
-#define NUM_LEDS_ALL ((NUM_LEDS) * 12)
+#define NUM_PANELS  15
+#define NUM_LEDS_ALL ((NUM_LEDS) * NUM_PANELS)
 #define COLOR_ORDER NEO_GRB // NeoPixel color format (see Adafruit_NeoPixel)
 #define MS_PER_FRAME 20
 #define DIAGNOSTICS false
 
-#define I_AM_DEVICE 0
+#define I_AM_DEVICE 1
 
 struct panelId {
   int device;
@@ -14,9 +15,11 @@ struct panelId {
 };
 
 // maps from "where is panel visually" to "where is panel in internal (wiring harness) order"
-panelId spherePanelMap[12] = {
-  {0, 0}, {0, 1}, {0, 2}, {0, 3}, // XXX not mapped yet
-  {1, 2}, {1, 4}, {1, 5}, {1, 3}, {1, 1}, {1, 0}, {1, 6}, {1, 7} };
+panelId spherePanelMap[NUM_PANELS] = {
+  {0, 5}, {0, 2}, {0, 4}, {0, 7},
+  {1, 4}, {1, 2}, {1, 5}, {1, 3}, {1, 1}, {1, 0}, {1, 6}, {1, 7},
+  {2, 0}, {2, 1}, {2, 2}
+};
 
 
 // For the Feather RP2040 SCORPIO, use this list:
@@ -458,16 +461,25 @@ void setVirtualPixel(int i, int r, int g, int b) {
   }
 }
 
-// Hue is in the range 0-6.
-void hueToRgb(float hue, uint8_t *r, uint8_t *g, uint8_t *b) {
+// Hue is in the range 0-6, sat and value in the range 0-1.
+void hsvToRgb(float hue, float sat, float value, uint8_t *r, uint8_t *g, uint8_t *b) {
     float x = 1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f);
+    uint8_t max = value*255;
 
-    if (hue < 1.0f/6.0f)      { *r = 255; *g = 255 * x; *b = 0; }
-    else if (hue < 2.0f/6.0f) { *r = 255 * x; *g = 255; *b = 0; }
-    else if (hue < 3.0f/6.0f) { *r = 0; *g = 255; *b = 255 * x; }
-    else if (hue < 4.0f/6.0f) { *r = 0; *g = 255 * x; *b = 255; }
-    else if (hue < 5.0f/6.0f) { *r = 255 * x; *g = 0; *b = 255; }
-    else                      { *r = 255; *g = 0; *b = 255 * x; }
+    if (hue < 1.0f/6.0f)      { *r = max; *g = max * x; *b = 0; }
+    else if (hue < 2.0f/6.0f) { *r = max * x; *g = max; *b = 0; }
+    else if (hue < 3.0f/6.0f) { *r = 0; *g = max; *b = max * x; }
+    else if (hue < 4.0f/6.0f) { *r = 0; *g = max * x; *b = max; }
+    else if (hue < 5.0f/6.0f) { *r = max * x; *g = 0; *b = max; }
+    else                      { *r = max; *g = 0; *b = max * x; }
+
+    // Squish up to max for saturation. I don't know if this is correct but
+    // I'm on the playa without internet access.
+    if (sat != 1) {
+      *r = max - (max - *r)*sat;
+      *g = max - (max - *g)*sat;
+      *b = max - (max - *b)*sat;
+    }
 }
 
 void slowRainbow() {
@@ -477,7 +489,7 @@ void slowRainbow() {
   for (int i = 0; i < NUM_LEDS_ALL; i++) {
     float hue = fmodf((float)(i + frame) / (180.0f * 8.0f), 1.0f);
     unsigned char r, g, b;
-    hueToRgb(hue, &r, &g, &b);
+    hsvToRgb(hue, 1, 1, &r, &g, &b);
 
     setVirtualPixel(i, r, g, b);
   }
@@ -526,10 +538,10 @@ struct Dash {
 
 #define MAX_DASHES 20
 #define MIN_RADIUS 2
-#define MAX_RADIUS 5
+#define MAX_RADIUS 20
 int dashCount = 0;
 Dash dashes[MAX_DASHES];
-float dashLeds[NUM_LEDS_ALL];
+uint8_t dashLeds[NUM_LEDS_ALL][3]; // RGB.
 float dashShape[MAX_RADIUS + 1][MAX_RADIUS + 1]; // [width][position]
 
 float getDashShape(int radius, int pos) {
@@ -572,16 +584,16 @@ void theMan() {
   }
 
   // Create new dashes.
-  if (dashCount < MAX_DASHES && (dashCount == 0 || rand() % 1000 <= 1)) {
+  if (dashCount < MAX_DASHES && (dashCount == 0 || rand() % 1000 <= 1 || true)) {
     Dash *d = &dashes[dashCount++];
     int width = rand() % (MAX_RADIUS - MIN_RADIUS + 1) + MIN_RADIUS;
     d->startMillis = now;
     d->radius = width;
-    d->speed = (rand() % 3 + 1)*10;
+    d->speed = rand() % 100 + 20;
   }
 
   // Lay out dashes.
-  memset(dashLeds, 0, sizeof(float)*NUM_LEDS_ALL);
+  memset(dashLeds, 0, sizeof(uint8_t)*NUM_LEDS_ALL*3);
   for (int i = 0; i < dashCount; i++) {
     Dash *d = &dashes[i];
     float pos = (now - d->startMillis)*d->speed/1000;
@@ -589,10 +601,16 @@ void theMan() {
     for (int j = -d->radius; j <= d->radius + 1; j++) {
       int k = pos + j;
       if (k >= 0 && k < NUM_LEDS_ALL) {
+        float hue = fmodf((float)(k + frame) / (180.0f * 8.0f), 1.0f);
+        float dist = min(float(abs(j))/d->radius, 1);
+        float sat = dist*0.2 + 0.8;
         float value = getInterpolatedDashShape(d->radius, j - frac);
-        if (value > dashLeds[k]) {
-          dashLeds[k] = value;
-        }
+        unsigned char r, g, b;
+
+        hsvToRgb(hue, sat, value, &r, &g, &b);
+        dashLeds[k][0] = max(dashLeds[k][0], r);
+        dashLeds[k][1] = max(dashLeds[k][1], g);
+        dashLeds[k][2] = max(dashLeds[k][2], b);
       }
     }
   }
@@ -600,12 +618,7 @@ void theMan() {
   // Draw dashes.
   leds.fill(0);
   for (int i = 0; i < NUM_LEDS_ALL; i++) {
-    float hue = fmodf((float)(i + frame) / (180.0f * 8.0f), 1.0f);
-    unsigned char r, g, b;
-    hueToRgb(hue, &r, &g, &b);
-    float value = dashLeds[i];
-
-    setVirtualPixel(i, value*r, value*g, value*b);
+    setVirtualPixel(i, dashLeds[i][0], dashLeds[i][1], dashLeds[i][2]);
   }
   leds.show();
 }
