@@ -18,7 +18,7 @@ struct panelId {
 panelId spherePanelMap[NUM_PANELS] = {
   {0, 5}, {0, 2}, {0, 4}, {0, 7},
   {1, 4}, {1, 2}, {1, 5}, {1, 3}, {1, 1}, {1, 0}, {1, 6}, {1, 7},
-  {2, 0}, {2, 1}, {2, 2}
+  {2, 3}, {2, 5}, {2, 7}
 };
 
 
@@ -124,7 +124,7 @@ unsigned long cmd_end = 0;
 // loop() runs over and over indefinitely. We use this to render each frame
 // of a repeating animation cycle based on elapsed time:
 
-int serialOkay = 1;
+int serialOkay = 2;
 
 void loop() {
   if (mode == RAIN_DEMO) {
@@ -561,9 +561,9 @@ float getInterpolatedDashShape(int radius, float pos) {
 
 void theManSetup() {
   // Pre-compute shapes of each dash width.
-  for (int width = MIN_RADIUS; width <= MAX_RADIUS; width++) {
-    for (int i = 0; i <= width; i++) {
-      dashShape[width][i] = exp(-float(i)/width*3);
+  for (int radius = MIN_RADIUS; radius <= MAX_RADIUS; radius++) {
+    for (int i = 0; i <= radius; i++) {
+      dashShape[radius][i] = exp(-float(i)/radius*3);
     }
   }
 }
@@ -584,12 +584,12 @@ void theMan() {
   }
 
   // Create new dashes.
-  if (dashCount < MAX_DASHES && (dashCount == 0 || rand() % 1000 <= 1 || true)) {
+  if (dashCount < MAX_DASHES) {
+    bool zinger = dashCount < 10 || rand() % 100 <= 5;
     Dash *d = &dashes[dashCount++];
-    int width = rand() % (MAX_RADIUS - MIN_RADIUS + 1) + MIN_RADIUS;
     d->startMillis = now;
-    d->radius = width;
-    d->speed = rand() % 100 + 20;
+    d->radius = zinger ? MIN_RADIUS : rand() % (MAX_RADIUS - MIN_RADIUS + 1) + MIN_RADIUS;
+    d->speed = zinger ? 1000 : rand() % 100 + 20;
   }
 
   // Lay out dashes.
